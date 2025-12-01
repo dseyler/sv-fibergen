@@ -27,8 +27,8 @@ surface_names = {'epi': 'EPI.vtp',
 params = {
     "ALFA_END": 60.0,
     "ALFA_EPI": -60.0,
-    "BETA_END": 20.0,
-    "BETA_EPI": -20.0,
+    "BETA_END": -20.0,
+    "BETA_EPI": 20.0,
 }
 
 # Make sure the paths are full paths
@@ -37,23 +37,23 @@ surfaces_dir = os.path.abspath(surfaces_dir)
 outdir = os.path.abspath(outdir)
 
 # # Generate the apex surface
-start = time()
-fg.generate_epi_apex(surfaces_dir, surface_names)
+# start = time()
+# fg.generate_epi_apex(surfaces_dir, surface_names)
 
 
-# Run the Laplace solver
-run_flag = False
-if run_flag:
-    if method == 'bayer':
-        template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer.xml")
-    laplace_results_file = fg.runLaplaceSolver(mesh_path, surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
-laplace_results_file = outdir + '/result_020.vtu'
+# # Run the Laplace solver
+# run_flag = False
+# if run_flag:
+#     if method == 'bayer':
+#         template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer.xml")
+#     laplace_results_file = fg.runLaplaceSolver(mesh_path, surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
+# laplace_results_file = outdir + '/result_020.vtu'
 
-# Generate the fiber directions
-result_mesh = fg.generate_fibers_BiV_Bayer_cells(laplace_results_file, params)
+# # Generate the fiber directions
+# result_mesh = fg.generate_fibers_BiV_Bayer_cells(laplace_results_file, params)
 
 
-print(f"generate fibers elapsed: {time() - start:.3f} s")
+# print(f"generate fibers elapsed: {time() - start:.3f} s")
 
 ########## NEW CODE FOR JJV APEX SURFACE ##########
 start = time()

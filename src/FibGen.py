@@ -194,30 +194,35 @@ def bislerp_jjv(Q1, Q2, interp_func):
             m11 = Rf[:, 1, 1]
             m22 = Rf[:, 2, 2]
             idx = np.argmax(np.stack([m00, m11, m22], axis=1), axis=1)
+            mf_idx = np.nonzero(mask_f)[0]
             # Case idx==0
             m0 = idx == 0
             if np.any(m0):
                 S = np.sqrt(1.0 + Rf[m0, 0, 0] - Rf[m0, 1, 1] - Rf[m0, 2, 2]) * 2.0
-                q[mask_f][m0, 0] = (Rf[m0, 2, 1] - Rf[m0, 1, 2]) / S
-                q[mask_f][m0, 1] = 0.25 * S
-                q[mask_f][m0, 2] = (Rf[m0, 0, 1] + Rf[m0, 1, 0]) / S
-                q[mask_f][m0, 3] = (Rf[m0, 0, 2] + Rf[m0, 2, 0]) / S
+                rows = mf_idx[m0]
+                q[rows, 0] = (Rf[m0, 2, 1] - Rf[m0, 1, 2]) / S
+                q[rows, 1] = 0.25 * S
+                q[rows, 2] = (Rf[m0, 0, 1] + Rf[m0, 1, 0]) / S
+                q[rows, 3] = (Rf[m0, 0, 2] + Rf[m0, 2, 0]) / S
             # Case idx==1
             m1 = idx == 1
             if np.any(m1):
                 S = np.sqrt(1.0 + Rf[m1, 1, 1] - Rf[m1, 0, 0] - Rf[m1, 2, 2]) * 2.0
-                q[mask_f][m1, 0] = (Rf[m1, 0, 2] - Rf[m1, 2, 0]) / S
-                q[mask_f][m1, 1] = (Rf[m1, 0, 1] + Rf[m1, 1, 0]) / S
-                q[mask_f][m1, 2] = 0.25 * S
-                q[mask_f][m1, 3] = (Rf[m1, 1, 2] + Rf[m1, 2, 1]) / S
+                rows = mf_idx[m1]
+                q[rows, 0] = (Rf[m1, 0, 2] - Rf[m1, 2, 0]) / S
+                q[rows, 1] = (Rf[m1, 0, 1] + Rf[m1, 1, 0]) / S
+                q[rows, 2] = 0.25 * S
+                q[rows, 3] = (Rf[m1, 1, 2] + Rf[m1, 2, 1]) / S
             # Case idx==2
             m2 = idx == 2
             if np.any(m2):
                 S = np.sqrt(1.0 + Rf[m2, 2, 2] - Rf[m2, 0, 0] - Rf[m2, 1, 1]) * 2.0
-                q[mask_f][m2, 0] = (Rf[m2, 1, 0] - Rf[m2, 0, 1]) / S
-                q[mask_f][m2, 1] = (Rf[m2, 0, 2] + Rf[m2, 2, 0]) / S
-                q[mask_f][m2, 2] = (Rf[m2, 1, 2] + Rf[m2, 2, 1]) / S
-                q[mask_f][m2, 3] = 0.25 * S
+                rows = mf_idx[m2]
+                q[rows, 0] = (Rf[m2, 1, 0] - Rf[m2, 0, 1]) / S
+                q[rows, 1] = (Rf[m2, 0, 2] + Rf[m2, 2, 0]) / S
+                q[rows, 2] = (Rf[m2, 1, 2] + Rf[m2, 2, 1]) / S
+                q[rows, 3] = 0.25 * S
+
         # Normalize for numerical safety
         q /= np.linalg.norm(q, axis=1, keepdims=True)
         return q
@@ -349,16 +354,16 @@ def orient_jjv(Q, alpha, beta):
 
 def getFiberDirections_jjv(Phi_EP, Phi_LV, Phi_RV, \
                         gPhi_EP, gPhi_LV, gPhi_RV, gPhi_AB, \
-                        params):
+                        params, result_mesh):
     '''
     Compute the fiber directions at the center of each cell
     '''
 
     # Unpack parameters
-    ALFA_END = params["ALFA_END"]
-    ALFA_EPI = params["ALFA_EPI"]
-    BETA_END = params["BETA_END"]
-    BETA_EPI = params["BETA_EPI"]
+    ALFA_END = np.deg2rad(params["ALFA_END"])
+    ALFA_EPI = np.deg2rad(params["ALFA_EPI"])
+    BETA_END = np.deg2rad(params["BETA_END"])
+    BETA_EPI = np.deg2rad(params["BETA_EPI"])
 
     print("   Computing fiber directions at cells")
 
@@ -367,25 +372,24 @@ def getFiberDirections_jjv(Phi_EP, Phi_LV, Phi_RV, \
     betaS = BETA_END * (1 - d) - BETA_END * d
     alfaW = ALFA_END * (1 - Phi_EP) + ALFA_EPI * Phi_EP
     betaW = BETA_END * (1 - Phi_EP) + BETA_EPI * Phi_EP
-    Q_LV = axis_jjv(gPhi_AB, -gPhi_LV)
-    Q_LV = orient_jjv(Q_LV, alfaS, betaS)
 
-    Q_RV = axis_jjv(gPhi_AB, gPhi_RV)
-    Q_RV = orient_jjv(Q_RV, alfaS, betaS)
+    Q_LV0 = axis_jjv(gPhi_AB, -gPhi_LV)
+    Q_LV = orient_jjv(Q_LV0, alfaS, betaS)
+    Q_RV0 = axis_jjv(gPhi_AB, gPhi_RV)
+    Q_RV = orient_jjv(Q_RV0, alfaS, betaS)
 
     Q_END = bislerp_jjv(Q_LV, Q_RV, d)
     Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
     Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
 
-    Q_EPI = axis_jjv(gPhi_AB, gPhi_EP)
-    Q_EPI = orient_jjv(Q_EPI, alfaW, betaW)
+    Q_EPI0 = axis_jjv(gPhi_AB, gPhi_EP)
+    Q_EPI = orient_jjv(Q_EPI0, alfaW, betaW)
 
     FST = bislerp_jjv(Q_END, Q_EPI, Phi_EP)
 
     F = FST[:, :, 0]
     S = FST[:, :, 1]
     T = FST[:, :, 2]
-    
 
     return F, S, T
 
@@ -415,14 +419,14 @@ def generate_fibers_BiV_Bayer_cells_jjv(laplace_results_file, params):
     # Generate fiber directions
     F, S, T = getFiberDirections_jjv(Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
-                                 params)
+                                 params, result_mesh)
     
     result_mesh.cell_data.set_array(F, 'F')
     result_mesh.cell_data.set_array(S, 'S')
     result_mesh.cell_data.set_array(T, 'T')
 
     # Save a copy of the mesh with Laplace fields for inspection
-    check_fname = os.path.join(mesh_dir, "check_jjv.vtu")
+    check_fname = os.path.join("check_jjv.vtu")
     print(f"   Writing check file   --->   {check_fname}")
     result_mesh.save(check_fname)
 
