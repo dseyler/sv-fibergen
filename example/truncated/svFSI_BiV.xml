@@ -33,7 +33,7 @@
 		<Face_file_path> /Users/jjv/Library/CloudStorage/OneDrive-Stanford/Research/sv-fibergen/example/truncated/mesh-surfaces/BASE.vtp </Face_file_path>
 	</Add_face>
 	<Add_face name="epi_apex" >
-		<Face_file_path> /Users/jjv/Library/CloudStorage/OneDrive-Stanford/Research/sv-fibergen/example/truncated/mesh-surfaces/EPI_APEX2.vtp </Face_file_path>
+		<Face_file_path> /Users/jjv/Library/CloudStorage/OneDrive-Stanford/Research/sv-fibergen/example/truncated/mesh-surfaces/EPI_APEX.vtp </Face_file_path>
 	</Add_face>
 	<Add_face name="endo_lv" >
 		<Face_file_path> /Users/jjv/Library/CloudStorage/OneDrive-Stanford/Research/sv-fibergen/example/truncated/mesh-surfaces/LV.vtp </Face_file_path>

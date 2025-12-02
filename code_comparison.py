@@ -37,33 +37,32 @@ mesh_path = os.path.abspath(mesh_path)
 surfaces_dir = os.path.abspath(surfaces_dir)
 outdir = os.path.abspath(outdir)
 
-# Generate the apex surface
-# start = time()
-# fg_old.generate_epi_apex(surfaces_dir, surface_names)
+########## OLD CODE  ##########
+start = time()
+fg_old.generate_epi_apex(surfaces_dir, surface_names)
+
+# Run the Laplace solver
+run_flag = True
+outdir = os.path.join(os.path.dirname(outdir), "output_old")
+if run_flag:
+    if method == 'bayer':
+        template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer_old.xml")
+    laplace_results_file = fg.runLaplaceSolver(mesh_path, surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
+laplace_results_file = outdir + '/result_020.vtu'
+
+# # Generate the fiber directions
+result_mesh = fg_old.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params)
+result_mesh = fg_old.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, fix=True)
 
 
-# ########## OLD CODE  ##########
-# run_flag = False
-# outdir = os.path.join(os.path.dirname(outdir), "output_old")
-# if run_flag:
-#     if method == 'bayer':
-#         template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer_old.xml")
-#     laplace_results_file = fg.runLaplaceSolver(mesh_path, surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
-# laplace_results_file = outdir + '/result_020.vtu'
-
-# # # Generate the fiber directions
-# # result_mesh = fg_old.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params)
-# result_mesh = fg_old.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, fix=True)
-
-
-# print(f"generate fibers (old code) elapsed time: {time() - start:.3f} s")
+print(f"generate fibers (old code) elapsed time: {time() - start:.3f} s")
 
 ########## NEW CODE  ##########
 start = time()
 fg.generate_epi_apex(mesh_path, surfaces_dir, surface_names)
 
 # Run the Laplace solver
-run_flag = False
+run_flag = True
 outdir = os.path.join(os.path.dirname(outdir), "output")
 if run_flag:
     if method == 'bayer':
