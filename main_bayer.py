@@ -40,8 +40,6 @@ start = time()
 fg.generate_epi_apex(mesh_path, surfaces_dir, surface_names)
 
 # Run the Laplace solver
-run_flag = True
-outdir = os.path.join(os.path.dirname(outdir), "output")
 if run_flag:
     if method == 'bayer':
         template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer.xml")
