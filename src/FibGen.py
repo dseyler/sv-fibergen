@@ -364,7 +364,7 @@ def bislerp(Q1, Q2, interp_func):
 def axis(u, v):
     """
     u, v: (nelems, 3)
-    return Q: (nelems, 3, 3) where columns are [e0, e1, e2] per element
+    return Q: (nelems, 3, 3) where columns are [e0 (circ), e1 (long), e2 (trans)] per element
     """
     u = np.asarray(u, dtype=float)
     v = np.asarray(v, dtype=float)
@@ -418,11 +418,18 @@ def orient(Q, alpha, beta):
     # Rb[:, 2, 1] = -sb
     # Rb[:, 2, 2] = cb
 
+    # Rb = np.zeros((ne, 3, 3), dtype=float)
+    # Rb[:, 0, 0] = 1.0
+    # Rb[:, 1, 1] = cb
+    # Rb[:, 1, 2] = -sb
+    # Rb[:, 2, 1] = sb
+    # Rb[:, 2, 2] = cb
+
     Rb = np.zeros((ne, 3, 3), dtype=float)
-    Rb[:, 0, 0] = 1.0
-    Rb[:, 1, 1] = cb
-    Rb[:, 1, 2] = -sb
-    Rb[:, 2, 1] = sb
+    Rb[:, 0, 0] = cb
+    Rb[:, 0, 2] = sb
+    Rb[:, 1, 1] = 1.0
+    Rb[:, 2, 0] = -sb
     Rb[:, 2, 2] = cb
 
     # Compose rotations and apply to Q per element
@@ -431,9 +438,9 @@ def orient(Q, alpha, beta):
 
     return Qt
 
-def getFiberDirections(Phi_EP, Phi_LV, Phi_RV, \
-                        gPhi_EP, gPhi_LV, gPhi_RV, gPhi_AB, \
-                        params, intermediate=False):
+def getFiberDirections(Phi_EPI, Phi_LV, Phi_RV,
+                                 gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
+                                 params, intermediate=False):
     '''
     Compute the fiber directions at the center of each cell
     '''
@@ -449,8 +456,8 @@ def getFiberDirections(Phi_EP, Phi_LV, Phi_RV, \
     d = Phi_RV / (Phi_LV + Phi_RV)
     alfaS = ALFA_END * (1 - d) - ALFA_END * d
     betaS = BETA_END * (1 - d) - BETA_END * d
-    alfaW = ALFA_END * (1 - Phi_EP) + ALFA_EPI * Phi_EP
-    betaW = BETA_END * (1 - Phi_EP) + BETA_EPI * Phi_EP
+    alfaW = ALFA_END * (1 - Phi_EPI) + ALFA_EPI * Phi_EPI
+    betaW = BETA_END * (1 - Phi_EPI) + BETA_EPI * Phi_EPI
 
     Q_LV0 = axis(gPhi_AB, -gPhi_LV)
     Q_LV = orient(Q_LV0, alfaS, betaS)
@@ -461,10 +468,10 @@ def getFiberDirections(Phi_EP, Phi_LV, Phi_RV, \
     Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
     Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
 
-    Q_EPI0 = axis(gPhi_AB, gPhi_EP)
+    Q_EPI0 = axis(gPhi_AB, gPhi_EPI)
     Q_EPI = orient(Q_EPI0, alfaW, betaW)
 
-    FST = bislerp(Q_END, Q_EPI, Phi_EP)
+    FST = bislerp(Q_END, Q_EPI, Phi_EPI)
 
     F = FST[:, :, 0]
     S = FST[:, :, 1]
@@ -475,7 +482,65 @@ def getFiberDirections(Phi_EP, Phi_LV, Phi_RV, \
 
     return F, S, T
 
-def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=False):
+
+def get_alpha_beta_angles(F, Phi_EPI, Phi_LV, Phi_RV,
+                                 gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
+                                 params):
+    '''
+    Sanity check routine
+    Compute alpha and beta angles at cells given fiber directions F and Laplace gradients
+
+    '''
+
+    ALFA_END = np.deg2rad(params["ALFA_END"])
+    ALFA_EPI = np.deg2rad(params["ALFA_EPI"])
+
+    d = Phi_RV / (Phi_LV + Phi_RV)
+    alfaS = ALFA_END * (1 - d) - ALFA_END * d
+    alfaW = ALFA_END * (1 - Phi_EPI) + ALFA_EPI * Phi_EPI
+
+    # Alpha angle 
+    Q_LV = axis(gPhi_AB, -gPhi_LV)          # (N,3,3)
+    Q_RV = axis(gPhi_AB, gPhi_RV)            # (N,3,3)
+    Q = np.copy(Q_LV)
+    Q[d > 0.5,:,0] = -Q_RV[d > 0.5,:,0]
+    Q[d > 0.5,:,2] = -Q_RV[d > 0.5,:,2]
+    C = Q[:, :, 0]                       # (N,3)
+    L = Q[:, :, 1]                       # (N,3)
+
+    # Angle in radians between F and circumferential vector
+    cosang = np.clip(np.sum(F * C, axis=1), -1.0, 1.0)
+    sinang = np.clip(np.sum(F * L, axis=1), -1.0, 1.0)
+    alpha_angle = np.sign(sinang) * np.arccos(np.abs(cosang))
+
+    # Beta angle
+    Q_LV = orient(axis(gPhi_AB, -gPhi_LV), 
+                    alfaS,
+                    0)
+    Q_RV = orient(axis(gPhi_AB, gPhi_RV), 
+                    alfaS,
+                    0)
+    
+    Q_END = bislerp(Q_LV, Q_RV, d)
+    Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
+    Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
+
+    Q_EPI0 = axis(gPhi_AB, gPhi_EPI)
+    Q_EPI = orient(Q_EPI0, alfaW, 0.0)
+
+    Q = bislerp(Q_END, Q_EPI, Phi_EPI)
+    Cr = Q[:, :, 0]
+    Lr = Q[:, :, 1]
+
+    # Angle in radians between F and circumferential vector
+    cosang = np.clip(np.sum(F * Cr, axis=1), -1.0, 1.0)
+    sinang = np.clip(np.sum(F * Lr, axis=1), -1.0, 1.0)
+    beta_angle = np.sign(sinang) * np.arccos(np.abs(cosang))
+
+    return np.rad2deg(alpha_angle), np.rad2deg(beta_angle), C, Cr
+
+
+def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=False, return_intermediate=False):
     '''
     Generate fiber directions on a truncated BiV ventricular geometry using the
     Laplace-Dirichlet rule-based method of Bayer et al. 2012
@@ -496,92 +561,63 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
 
 
     # Generate fiber directions
-    F, S, T = getFiberDirections(Phi_EPI, Phi_LV, Phi_RV,
+    out = getFiberDirections(Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
-                                 params)
+                                 params, intermediate=return_intermediate)
+    
+    if return_intermediate:
+        F, S, T, eC_LV, eC_RV, eC_END, eC_EPI = out
+        result_mesh.cell_data['F'] = F
+        result_mesh.cell_data['S'] = S
+        result_mesh.cell_data['T'] = T
+        result_mesh.cell_data['eC_LV'] = eC_LV
+        result_mesh.cell_data['eC_RV'] = eC_RV
+        result_mesh.cell_data['eC_END'] = eC_END
+        result_mesh.cell_data['eC_EPI'] = eC_EPI
+    else:
+        F, S, T = out
+        result_mesh.cell_data['F'] = F
+        result_mesh.cell_data['S'] = S
+        result_mesh.cell_data['T'] = T
 
     print("   Writing domains and fibers to VTK data structure")
 
     # Write the fiber directions to a vtu files
     output_mesh = copy.deepcopy(result_mesh)
+    # # Ensure only FIB_DIR is present
+    # for k in list(output_mesh.cell_data.keys()):
+    #     output_mesh.cell_data.remove(k)
+    # for k in list(output_mesh.point_data.keys()):
+    #     output_mesh.point_data.remove(k)
 
-    fname1 = os.path.join(outdir, "fibersLong.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
-    # Ensure only FIB_DIR is present
-    for k in list(output_mesh.cell_data.keys()):
-        output_mesh.cell_data.remove(k)
-    for k in list(output_mesh.point_data.keys()):
-        output_mesh.point_data.remove(k)
-    output_mesh.cell_data.set_array(F, 'FIB_DIR')
-    output_mesh.save(fname1)
+    # fname1 = os.path.join(outdir, "fibersLong.vtu")
+    # print("   Writing to vtu file   --->   %s" % (fname1))
+    # output_mesh.cell_data.set_array(F, 'FIB_DIR')
+    # output_mesh.save(fname1)
 
-    fname1 = os.path.join(outdir, "fibersSheet.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
-    # Ensure only FIB_DIR is present
-    for k in list(output_mesh.cell_data.keys()):
-        output_mesh.cell_data.remove(k)
-    for k in list(output_mesh.point_data.keys()):
-        output_mesh.point_data.remove(k)
-    output_mesh.cell_data.set_array(T, 'FIB_DIR')
-    output_mesh.save(fname1)
+    # fname1 = os.path.join(outdir, "fibersSheet.vtu")
+    # print("   Writing to vtu file   --->   %s" % (fname1))
+    # output_mesh.cell_data.set_array(T, 'FIB_DIR')
+    # output_mesh.save(fname1)
 
-    fname1 = os.path.join(outdir, "fibersNormal.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
-    # Ensure only FIB_DIR is present
-    for k in list(output_mesh.cell_data.keys()):
-        output_mesh.cell_data.remove(k)
-    for k in list(output_mesh.point_data.keys()):
-        output_mesh.point_data.remove(k)
-    output_mesh.cell_data.set_array(S, 'FIB_DIR')
-    output_mesh.save(fname1)
+    # fname1 = os.path.join(outdir, "fibersNormal.vtu")
+    # print("   Writing to vtu file   --->   %s" % (fname1))
+    # output_mesh.cell_data.set_array(S, 'FIB_DIR')
+    # output_mesh.save(fname1)
 
-    t2 = time.time()
-    print('\n   Total time: %.3fs' % (t2-t1))
-    print("========================================================")
+    # t2 = time.time()
+    # print('\n   Total time: %.3fs' % (t2-t1))
+    # print("========================================================")
 
     if return_angles:
-        ALFA_END = np.deg2rad(params["ALFA_END"])
-        ALFA_EPI = np.deg2rad(params["ALFA_EPI"])
-        BETA_END = np.deg2rad(params["BETA_END"])
-        BETA_EPI = np.deg2rad(params["BETA_EPI"])
-
-        # Alpha angle
-        Q_LV = axis(gPhi_AB, -gPhi_LV)          # (N,3,3)
-        Q_RV = axis(gPhi_AB, gPhi_RV)            # (N,3,3)
-        d = Phi_RV / (Phi_LV + Phi_RV)
-        Q = np.copy(Q_LV)
-        Q[d > 0.5,:,0] = -Q_RV[d > 0.5,:,0]
-        Q[d > 0.5,:,2] = -Q_RV[d > 0.5,:,2]
-        C = Q[:, :, 0]                       # (N,3)
-        
-        # Angle in radians between F and circumferential vector
-        cosang = np.clip(np.sum(F * C, axis=1), -1.0, 1.0)
-        alpha_angle = np.arccos(np.abs(cosang))
-        # Save to mesh for inspection
-        result_mesh.cell_data['alpha_angle'] = np.rad2deg(alpha_angle)
-        result_mesh.cell_data['eC'] = C
-
-        # Beta 
-        
-        Q_LV = orient(axis(gPhi_AB, -gPhi_LV), 
-                        ALFA_END * (1 - d) - ALFA_END * d,
-                        BETA_END * (1 - d) - BETA_END * d)
-        Q_RV = orient(axis(gPhi_AB, gPhi_RV), 
-                        ALFA_END * (1 - d) - ALFA_END * d,
-                        BETA_END * (1 - d) - BETA_END * d)
-        Q = np.copy(Q_LV)
-        Q[d > 0.5,:,0] = -Q_RV[d > 0.5,:,0]
-        Q[d > 0.5,:,2] = -Q_RV[d > 0.5,:,2]
-        C = Q[:, :, 0]
-        # Angle in radians between T and circumferential vector
-        cosang = np.clip(np.sum(F * C, axis=1), -1.0, 1.0)
-        beta_angle = np.arccos(np.abs(cosang))
-        # Save to mesh for inspection
-        result_mesh.cell_data['beta_angle'] = np.rad2deg(beta_angle)
-        result_mesh.cell_data['eCr'] = C
-        result_mesh.cell_data['F'] = F
-
+        alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles(F, Phi_EPI, Phi_LV, Phi_RV,
+                                 gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
+                                 params)
+        output_mesh.cell_data['Alpha_Angle'] = alpha_angle
+        output_mesh.cell_data['Beta_Angle'] = beta_angle
+        output_mesh.cell_data['eC'] = eC
+        output_mesh.cell_data['eCr'] = eCr
     
 
-    return result_mesh
+    return output_mesh
 

@@ -26,10 +26,10 @@ surface_names = {'epi': 'EPI.vtp',
                  'endo_rv': 'RV.vtp'}
 
 params = {
-    "ALFA_END": 0.0,
-    "ALFA_EPI": 0.0,
-    "BETA_END": -60.0,
-    "BETA_EPI": 60.0,
+    "ALFA_END": 60.0,
+    "ALFA_EPI": -60.0,
+    "BETA_END": 20.0,
+    "BETA_EPI": -20.0,
 }
 
 # Make sure the paths are full paths
@@ -72,7 +72,7 @@ if run_flag:
 laplace_results_file = outdir + '/result_001.vtu'
 
 # Generate the fiber directions
-result_mesh = fg.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=True)
+result_mesh = fg.generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=True, return_intermediate=True)
 
 result_mesh.save(os.path.join(outdir, "check.vtu"))
 
