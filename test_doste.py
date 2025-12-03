@@ -28,6 +28,7 @@ surface_names = {'epi': 'epi.vtp',
                  'endo_lv': 'endo_lv.vtp',
                  'endo_rv': 'endo_rv.vtp'}
 
+# Parameters from the Doste paper https://doi.org/10.1002/cnm.3185
 params = {
     # A = alpha angle
     'AENDORV' : 90,
@@ -35,18 +36,18 @@ params = {
     'AENDOLV' : 60,
     'AEPILV' : -60,
 
-    # AOTENDOLV = 90
-    'AOTENDOLV' : 0, 
+    'AOTENDOLV' : 90, 
     'AOTENDORV' : 90,
     'AOTEPILV' : 0,
     'AOTEPIRV' : 0,
     'ATRIENDO' : 0, 
 
-    # B = beta angle
+    # B = beta angle (this have an angle contrary to the Doste paper, 
+    # but it's because the longitudinal direction is opposite)
     'BENDORV' : 0,
-    'BEPIRV' : 0,
-    'BENDOLV' : 0,
-    'BEPILV' : 0,
+    'BEPIRV' : 0, #-20,
+    'BENDOLV' : 0, #20,
+    'BEPILV' : 0, #-20,
 }
 
 # Make sure the paths are full paths
@@ -72,7 +73,7 @@ if run_flag:
 laplace_results_file = outdir + '/result_001.vtu'
 
 # Generate the fiber directions
-result_mesh = fg.generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return_intermediate=True)
+result_mesh = fg.generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return_angles=True, return_intermediate=True)
 
 result_mesh_path = os.path.join(outdir, "check.vtu")
 result_mesh.save(result_mesh_path)

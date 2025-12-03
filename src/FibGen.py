@@ -17,6 +17,27 @@ import time
 import copy
 
 
+def normalize(x):
+    """
+    Normalize each row of an (N, 3) array. Zero rows remain zero.
+    
+    Args:
+        x: array-like of shape (N, 3)
+    Returns:
+        np.ndarray of shape (N, 3) with row-wise normalized vectors.
+    """
+    a = np.asarray(x, dtype=float)
+    if a.ndim != 2 or a.shape[1] != 3:
+        raise ValueError("normalize expects an array of shape (N, 3)")
+    norms = np.linalg.norm(a, axis=1, keepdims=True)
+    safe_norms = np.where(norms == 0.0, 1.0, norms)
+    out = a / safe_norms
+    zero_rows = (norms.squeeze() == 0.0)
+    if np.any(zero_rows):
+        out[zero_rows] = 0.0
+    return out
+
+
 
 def get_normal_plane_svd(points):   # Find the plane that minimizes the distance given N points
     centroid = np.mean(points, axis=0)
@@ -105,9 +126,9 @@ def generate_epi_apex(mesh_path, surfaces_dir, surface_names):
 
 
 
-def runLaplaceSolver(mesh_dir, surfaces_dir, mesh_file, exec_svfsi, template_file, outdir, surface_names):
+def runLaplaceSolver(mesh_dir, surfaces_dir, mesh_file, exec_svmultiphysics, template_file, outdir, surface_names):
     xml_template_path = template_file
-    out_name = os.path.join(surfaces_dir, "../svFSI_BiV.xml")
+    out_name = os.path.join(surfaces_dir, "../svFibers_BiV.xml")
     
     with open(xml_template_path, 'r') as svFile:
         xml_content = svFile.read()
@@ -177,8 +198,8 @@ def runLaplaceSolver(mesh_dir, surfaces_dir, mesh_file, exec_svfsi, template_fil
         svFileNew.write(xml_content)
 
     print("   Running svMultiPhysics solver")
-    print(f"   {exec_svfsi + out_name}")
-    os.system(exec_svfsi + out_name)
+    print(f"   {exec_svmultiphysics + out_name}")
+    os.system(exec_svmultiphysics + out_name)
 
     return outdir + '/results_001.vtu'
 
@@ -379,16 +400,16 @@ def axis(u, v):
     ne = u.shape[0]
 
     # e1 = normalize rows of u
-    e1 = u/np.linalg.norm(u, axis=1)[:, None]
+    e1 = normalize(u)
 
     # e2 = v - proj_{e1}(v)
     proj = np.sum(e1 * v, axis=1)[:, None] * e1
     e2 = v - proj
-    e2 = e2 / np.linalg.norm(e2, axis=1)[:, None]
+    e2 = normalize(e2)
 
     # e0 = cross(e1, e2) normalized
     e0 = np.cross(e1, e2, axisa=1, axisb=1)
-    e0 = e0 / np.linalg.norm(e0, axis=1)[:, None]
+    e0 = normalize(e0)
 
     Q = np.zeros((ne, 3, 3), dtype=float)
     Q[:, :, 0] = e0
@@ -491,7 +512,7 @@ def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
     return F, S, T
 
 
-def get_alpha_beta_angles(F, Phi_EPI, Phi_LV, Phi_RV,
+def get_alpha_beta_angles_Bayer(F, Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
                                  params):
     '''
@@ -548,7 +569,6 @@ def get_alpha_beta_angles(F, Phi_EPI, Phi_LV, Phi_RV,
     beta_angle = - np.sign(sinang) * np.arccos(np.abs(cosang)) # Note the minus sign to match definition
 
     return np.rad2deg(alpha_angle), np.rad2deg(beta_angle), C, Cr
-
 
 def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=False, return_intermediate=False):
     '''
@@ -620,7 +640,7 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
     print("========================================================")
 
     if return_angles:
-        alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles(F, Phi_EPI, Phi_LV, Phi_RV,
+        alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles_Bayer(F, Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
                                  params)
         output_mesh.cell_data['Alpha_Angle'] = alpha_angle
@@ -701,40 +721,40 @@ def compute_basis_vectors(lap, grad):
     # LV
     # longitudinal
     lv_glong = grad['lv_mv_long']*lap['lv_weight'][:,None] + grad['lv_av_long']*(1 - lap['lv_weight'][:,None])
-    eL_lv = lv_glong/np.linalg.norm(lv_glong, axis=1)[:,None]
+    eL_lv = normalize(lv_glong)
 
     # transmural
     lv_gtrans = grad['lv_trans'] - (eL_lv*grad['lv_trans'])*eL_lv
-    eT_lv = lv_gtrans/np.linalg.norm(lv_gtrans, axis=1)[:,None]
+    eT_lv = normalize(lv_gtrans)
 
     # circumferential
     eC_lv = np.cross(eL_lv, eT_lv, axisa=1, axisb=1)
-    eC_lv = eC_lv/np.linalg.norm(eC_lv, axis=1)[:,None]
+    eC_lv = normalize(eC_lv)
 
     # Ensuring orthogonality
     eT_lv = np.cross(eC_lv, eL_lv, axisa=1, axisb=1)
-    eT_lv = eT_lv/np.linalg.norm(eT_lv, axis=1)[:,None]
+    eT_lv = normalize(eT_lv)
 
     # RV
     # longitudinal
     rv_glong = grad['rv_tv_long']*lap['rv_weight'][:,None]  + grad['rv_pv_long']*(1 - lap['rv_weight'][:,None] )
-    eL_rv = rv_glong/np.linalg.norm(rv_glong, axis=1)[:,None]
+    eL_rv = normalize(rv_glong)
 
     # transmural
     rv_gtrans = grad['rv_trans'] - (eL_rv*grad['rv_trans'])*eL_rv
-    eT_rv = rv_gtrans/np.linalg.norm(rv_gtrans, axis=1)[:,None]
+    eT_rv = normalize(rv_gtrans)
 
     # circumferential
     eC_rv = np.cross(eL_rv, eT_rv, axisa=1, axisb=1)
-    eC_rv = eC_rv/np.linalg.norm(eC_rv, axis=1)[:,None]
+    eC_rv = normalize(eC_rv)
 
     # Ensuring orthogonality
     eT_rv = np.cross(eC_rv, eL_rv, axisa=1, axisb=1)
-    eT_rv = eT_rv/np.linalg.norm(eT_rv, axis=1)[:,None]
+    eT_rv = normalize(eT_rv)
 
     # Write out global circumferential vector
     eC = eC_rv*(1-lap['ven_trans'][:,None]) + eC_lv*lap['ven_trans'][:,None]
-    eC = eC/np.linalg.norm(eC, axis=1)[:,None]
+    eC = normalize(eC)
 
     basis = {'eC_lv': eC_lv,
                     'eT_lv': eT_lv,
@@ -834,9 +854,9 @@ def compute_alpha_beta_angles(lap, params):
 
 
 def rotate_basis(eC, eL, eT, alpha, beta):
-    eC = eC/np.linalg.norm(eC, axis=1)[:,None]
-    eT = eT/np.linalg.norm(eT, axis=1)[:,None]
-    eL = eL/np.linalg.norm(eL, axis=1)[:,None]
+    eC = normalize(eC)
+    eT = normalize(eT)
+    eL = normalize(eL)
 
     # Matrix of directional vectors
     Q = np.stack([eC, eL, eT], axis=-1)
@@ -888,13 +908,15 @@ def interpolate_local_basis(lap, local_basis):
     epi_trans = lap['epi_trans']
 
     Qrv_septum = local_basis['Qrv_septum']
+    Qlv_septum = local_basis['Qlv_septum']
     Qrv_epi = local_basis['Qrv_epi']
     Qlv_epi = local_basis['Qlv_epi']
 
     Qepi = bislerp(Qrv_epi, Qlv_epi, lap['ven_trans'])
-    Q = bislerp(Qrv_septum, Qepi, epi_trans)
+    Qendo = bislerp(Qrv_septum, Qlv_septum, lap['ven_trans'])
+    Q = bislerp(Qendo, Qepi, epi_trans)
 
-    return Q
+    return Q, Qepi
 
 
 def getFiberDirectionsDoste(lap, grad, params, intermediate=False):
@@ -912,15 +934,15 @@ def getFiberDirectionsDoste(lap, grad, params, intermediate=False):
     local_basis = compute_local_basis(basis, angles)
 
     print('Interpolating basis')
-    Q = interpolate_local_basis(lap, local_basis)
+    Q, Qepi = interpolate_local_basis(lap, local_basis)
 
     print('Done!')
-    f = Q[:, :, 1]
-    s = Q[:, :, 2]
-    n = Q[:, :, 0]
+    f = Q[:, :, 0]
+    s = Q[:, :, 1]
+    n = Q[:, :, 2]
 
     if intermediate:
-        return f, s, n, basis, angles, local_basis
+        return f, s, n, basis, angles, local_basis, Qepi[:,:,0]
 
     return f, s, n
 
@@ -948,10 +970,11 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
     out = getFiberDirectionsDoste(lap, grad, params, intermediate=return_intermediate)
 
     if return_intermediate:
-        F, S, T, basis, angles, local_basis = out
+        F, S, T, basis, angles, local_basis, Qepi = out
         result_mesh.cell_data['F'] = F
         result_mesh.cell_data['S'] = S
         result_mesh.cell_data['T'] = T
+        result_mesh.cell_data['Qepi'] = Qepi
         for k, v in basis.items():
             result_mesh.cell_data[k] = v
         for k, v in angles.items():
@@ -995,5 +1018,70 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
     print('\n   Total time: %.3fs' % (t2-t1))
     print("========================================================")
 
+    if return_angles:
+        alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles_Doste(F, lap, grad, params)
+        output_mesh.cell_data['Alpha_Angle'] = alpha_angle
+        output_mesh.cell_data['Beta_Angle'] = beta_angle
+        output_mesh.cell_data['eC'] = eC
+        output_mesh.cell_data['eCr'] = eCr
+
 
     return output_mesh
+
+
+
+def get_alpha_beta_angles_Doste(F, lap, grad, params):
+    '''
+    Sanity check routine for Doste-based fibers.
+    Compute alpha and beta angles at cells given fiber directions F and the
+    Laplace/basis fields used by the Doste method.
+
+    Returns:
+      alpha_angle_deg, beta_angle_deg, eC_ref, Cr_ref
+        - alpha, beta in degrees
+        - eC_ref: reference circumferential vector (before rotations)
+        - Cr_ref: circumferential vector after applying only alpha rotation
+    '''
+    # Ensure radians for internal computations (do not mutate input dict)
+    params_rad = {k: np.deg2rad(v) for k, v in params.items()}
+
+    # Reconstruct base vectors used by Doste
+    basis = compute_basis_vectors(lap, grad)
+    eC_global = basis['eC']  # blended circumferential
+
+    # Build a blended longitudinal direction for alpha sign (LV/RV mix)
+    ven = lap['ven_trans'][:, None]
+    eL_blend = normalize(basis['eL_rv'] * (1.0 - ven) + basis['eL_lv'] * ven)
+
+    # Alpha: signed angle between F and circumferential in the tangent plane,
+    # sign taken along longitudinal direction (consistent with Bayer routine, 
+    # but negative because the longitudinal direction is opposite to the Doste paper)
+    cos_a = np.clip(np.sum(F * eC_global, axis=1), -1.0, 1.0)
+    sin_a = np.clip(np.sum(F * eL_blend, axis=1), -1.0, 1.0)
+    alpha_angle = -np.sign(sin_a) * np.arccos(np.abs(cos_a))
+
+    # Build reference frame after ONLY alpha rotation (beta = 0)
+    angles = compute_alpha_beta_angles(lap, params_rad)  # radians
+    Qlv_septum_a = rotate_basis(basis['eC_lv'], basis['eL_lv'], basis['eT_lv'],
+                                angles['alpha_septum'], 0.0)
+    Qrv_septum_a = rotate_basis(basis['eC_rv'], basis['eL_rv'], basis['eT_rv'],
+                                angles['alpha_septum'], 0.0)
+    Qlv_epi_a = rotate_basis(basis['eC_lv'], basis['eL_lv'], basis['eT_lv'],
+                             angles['alpha_wall_lv'], 0.0)
+    Qrv_epi_a = rotate_basis(basis['eC_rv'], basis['eL_rv'], basis['eT_rv'],
+                             angles['alpha_wall_rv'], 0.0)
+
+    Qepi_a = bislerp(Qrv_epi_a, Qlv_epi_a, lap['ven_trans'])
+    Qendo_a = bislerp(Qrv_septum_a, Qlv_septum_a, lap['ven_trans'])
+    Qa = bislerp(Qendo_a, Qepi_a, lap['epi_trans'])
+
+    Cr = Qa[:, :, 0]  # circumferential after alpha-only rotation
+    Tr = Qa[:, :, 2]  # transmural after alpha-only rotation
+
+    # Beta: signed angle between F and Cr, sign w.r.t. Tr (negative by convention)
+    cos_b = np.clip(np.sum(F * Cr, axis=1), -1.0, 1.0)
+    sin_b = np.clip(np.sum(F * Tr, axis=1), -1.0, 1.0)
+    beta_angle = np.sign(sin_b) * np.arccos(np.abs(cos_b))
+
+    return np.rad2deg(alpha_angle), np.rad2deg(beta_angle), eC_global, Cr
+
