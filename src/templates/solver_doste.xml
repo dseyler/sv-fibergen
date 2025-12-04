@@ -353,62 +353,6 @@
 	</Add_BC>
 </Add_equation>
 
-<!-- Eighth problem: RV opposite valve weights (Weight_RV_OP) -->
-<!-- PV: 1.0 -->
-<!-- TV: 0.0 -->
-<!-- MV: 1.0 -->
-<!-- AV: 1.0 -->
-<Add_equation type="heatS" >
-	<Coupled> 0 </Coupled>
-	<Min_iterations> 1 </Min_iterations>
-	<Max_iterations> 5 </Max_iterations>
-	<Tolerance> 1e-6 </Tolerance>
-
-	<Conductivity> 1.0 </Conductivity>
-	<Source_term> 0.0 </Source_term>
-	<Density> 0.0 </Density>
-
-	<Output type="Spatial" >
-		<Temperature> 1 </Temperature>
-	</Output>
-
-	<Output type="Alias" >
-		<Temperature> Weight_RV_OP </Temperature>
-	</Output>
-
-	<LS type="CG" >
-		<Linear_algebra type="fsils" >
-         <Preconditioner> fsils </Preconditioner> 
-      	</Linear_algebra>
-		<Max_iterations> 500 </Max_iterations>
-		<Tolerance>      1e-6 </Tolerance>
-	</LS>
-
-	<Add_BC name="pv" >
-		<Type> Dir </Type>
-		<Value> 1.0 </Value>
-		<Zero_out_perimeter> 0 </Zero_out_perimeter>
-	</Add_BC>
-
-	<Add_BC name="tv" >
-		<Type> Dir </Type>
-		<Value> 0.0 </Value>
-		<Zero_out_perimeter> 0 </Zero_out_perimeter>
-	</Add_BC>
-
-	<Add_BC name="mv" >
-		<Type> Dir </Type>
-		<Value> 1.0 </Value>
-		<Zero_out_perimeter> 0 </Zero_out_perimeter>
-	</Add_BC>
-
-	<Add_BC name="av" >
-		<Type> Dir </Type>
-		<Value> 1.0 </Value>
-		<Zero_out_perimeter> 0 </Zero_out_perimeter>
-	</Add_BC>
-</Add_equation>
-
 
 <!-- Ninth problem: Epicardial transmural (Trans_EPI) -->
 <!-- epi: 1.0; lv_endo: 0.0, rv_endo -->

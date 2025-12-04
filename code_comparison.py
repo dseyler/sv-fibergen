@@ -28,8 +28,8 @@ surface_names = {'epi': 'EPI.vtp',
 params = {
     "ALFA_END": 60.0,
     "ALFA_EPI": -60.0,
-    "BETA_END": 20.0,
-    "BETA_EPI": -20.0,
+    "BETA_END": 0.0,    # Beta angles were not good in old code so set to 0 for fair comparison
+    "BETA_EPI": 0.0,
 }
 
 # Make sure the paths are full paths

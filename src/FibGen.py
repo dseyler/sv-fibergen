@@ -671,7 +671,7 @@ def loadLaplaceSolnDoste(fileName):
     '''
 
     varnames = ['Trans_BiV', 'Long_AV', 'Long_MV', 'Long_PV', 'Long_TV', 'Weight_LV', 
-                'Weight_RV', 'Weight_RV_OP', 'Trans_EPI', 'Trans_LV', 'Trans_RV']
+                'Weight_RV', 'Trans_EPI', 'Trans_LV', 'Trans_RV']
 
     print("   Loading Laplace solution <---   %s" % (fileName))
 
@@ -815,28 +815,29 @@ def redistribute_weight(weight, up, low, strategy='centre'):
 
 
 def compute_alpha_beta_angles(lap, params):
+    # Modify weights so the effect of outflow tracts is localized
+    lv_weight = redistribute_weight(lap['lv_weight'], 0.7, 0.01)
+    rv_weight = redistribute_weight(lap['rv_weight'], 0.1, 0.001)
 
     # LV
-    alpha_lv_endo_long = params['AENDOLV'] * lap['lv_weight'] + params['AOTENDOLV'] * (1 - lap['lv_weight'])  # Endo
-    new_long_weight = redistribute_weight(lap['lv_mv_long'], 0.7, 0.01)
-    alpha_lv_epi_long = params['AEPILV'] * new_long_weight + params['AOTEPILV'] * (1 - new_long_weight)
-
+    alpha_lv_endo_long = params['AENDOLV'] * lv_weight + params['AOTENDOLV'] * (1 - lv_weight)  # Endo
+    alpha_lv_epi_long = params['AEPILV'] * lv_weight + params['AOTEPILV'] * (1 - lv_weight)
+    
     alpha_wall_lv = alpha_lv_endo_long * (1 - lap['epi_trans']) + alpha_lv_epi_long * lap['epi_trans']
-    beta_wall_lv = (params['BENDOLV'] * (1 - lap['epi_trans']) + params['BEPILV'] * lap['epi_trans']) * lap['lv_weight']
+    beta_wall_lv = (params['BENDOLV'] * (1 - lap['epi_trans']) + params['BEPILV'] * lap['epi_trans']) * lv_weight
 
     # RV
-    new_long_weight_rv = redistribute_weight(lap['rv_op_weight'], 0.2, 0.001)
-    alpha_rv_endo_long = params['AENDORV'] * new_long_weight_rv + params['ATRIENDO'] * (1 - new_long_weight_rv)
-    alpha_rv_epi_long = params['AEPIRV'] * lap['rv_weight'] + params['AOTEPIRV'] * (1 - lap['lv_weight'])
+    alpha_rv_endo_long = params['AENDORV'] * rv_weight + params['AOTENDORV'] * (1 - rv_weight)
+    alpha_rv_epi_long = params['AEPIRV'] * rv_weight + params['AOTEPIRV'] * (1 - rv_weight)
 
     alpha_wall_rv = alpha_rv_endo_long * (1 - lap['epi_trans']) + alpha_rv_epi_long * lap['epi_trans']
-    beta_wall_rv = (params['BENDORV'] * (1 - lap['epi_trans']) + params['BEPIRV'] * lap['epi_trans']) * lap['rv_weight']
+    beta_wall_rv = (params['BENDORV'] * (1 - lap['epi_trans']) + params['BEPIRV'] * lap['epi_trans']) * rv_weight
 
     # Septum
     sep = np.abs(lap['ven_trans'] - 0.5)
     sep = (sep - np.min(sep)) / (np.max(sep) - np.min(sep))
     alpha_septum = (alpha_lv_endo_long * sep * lap['lv_trans']) + (alpha_rv_endo_long * sep * lap['rv_trans'])
-    beta_septum = (params['BENDOLV'] * lap['lv_trans'] * lap['lv_weight']) + (params['BENDORV'] * lap['rv_trans'] * lap['lv_weight'])
+    beta_septum = (params['BENDOLV'] * lap['lv_trans'] * lv_weight) + (params['BENDORV'] * lap['rv_trans'] * rv_weight)
 
     angles = {'alpha_lv_endo_long': alpha_lv_endo_long,
             'alpha_lv_epi_long': alpha_lv_epi_long,
@@ -993,11 +994,11 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
 
     # Write the fiber directions to a vtu files
     output_mesh = copy.deepcopy(result_mesh)
-    # # Ensure only FIB_DIR is present
-    # for k in list(output_mesh.cell_data.keys()):
-    #     output_mesh.cell_data.remove(k)
-    # for k in list(output_mesh.point_data.keys()):
-    #     output_mesh.point_data.remove(k)
+    # Ensure only FIB_DIR is present
+    for k in list(output_mesh.cell_data.keys()):
+        output_mesh.cell_data.remove(k)
+    for k in list(output_mesh.point_data.keys()):
+        output_mesh.point_data.remove(k)
 
     fname1 = os.path.join(outdir, "fibersLong.vtu")
     print("   Writing to vtu file   --->   %s" % (fname1))
@@ -1042,8 +1043,6 @@ def get_alpha_beta_angles_Doste(F, lap, grad, params):
         - eC_ref: reference circumferential vector (before rotations)
         - Cr_ref: circumferential vector after applying only alpha rotation
     '''
-    # Ensure radians for internal computations (do not mutate input dict)
-    params_rad = {k: np.deg2rad(v) for k, v in params.items()}
 
     # Reconstruct base vectors used by Doste
     basis = compute_basis_vectors(lap, grad)
@@ -1061,7 +1060,7 @@ def get_alpha_beta_angles_Doste(F, lap, grad, params):
     alpha_angle = -np.sign(sin_a) * np.arccos(np.abs(cos_a))
 
     # Build reference frame after ONLY alpha rotation (beta = 0)
-    angles = compute_alpha_beta_angles(lap, params_rad)  # radians
+    angles = compute_alpha_beta_angles(lap, params)  # radians
     Qlv_septum_a = rotate_basis(basis['eC_lv'], basis['eL_lv'], basis['eT_lv'],
                                 angles['alpha_septum'], 0.0)
     Qrv_septum_a = rotate_basis(basis['eC_rv'], basis['eL_rv'], basis['eT_rv'],
