@@ -226,10 +226,36 @@ def loadLaplaceSolnBayer(fileName):
     # Read mesh with pyvista
     result_mesh = pv.read(fileName)
 
-    # Convert point-data to cell-data (keep point data passed to cells)
-    mesh_cells = result_mesh.point_data_to_cell_data()
+    print("   Extracting solution and estimating gradients at points (then averaging to cells)")
 
-    print("   Extracting solution and estimating gradients at cells")
+    # Helper: min-max scale array to [0,1]; if flat, return 0.5
+    def _minmax01(arr):
+        arr = np.asarray(arr, dtype=float)
+        amin = np.min(arr)
+        amax = np.max(arr)
+        if amax > amin:
+            return (arr - amin) / (amax - amin)
+        else:
+            return np.ones_like(arr) * 0.5
+
+    # Compute point-wise gradient. Smoother than cell-averaged gradients.
+    for data_name in (DATASTR1, DATASTR2, DATASTR3, DATASTR4):
+        if data_name not in result_mesh.point_data:
+            raise KeyError(
+                f"Expected point_data array '{data_name}' not found in {fileName}. "
+                f"Available point_data: {list(result_mesh.point_data.keys())}"
+            )
+
+        # Scale to [0,1] before gradient computation
+        scaled = _minmax01(result_mesh.point_data[data_name])
+        result_mesh.point_data[data_name] = scaled
+
+        gmesh = result_mesh.compute_derivative(scalars=data_name, gradient=True, preference='point')
+        # PyVista stores the gradient vector in an array named 'gradient'
+        result_mesh.point_data[data_name + "_grad"] = np.asarray(gmesh.point_data["gradient"])
+
+    # Convert point-data to cell-data (includes the newly computed *_grad arrays)
+    mesh_cells = result_mesh.point_data_to_cell_data()
 
     # Get cell centers (Nx3) and scalar cell arrays (N,)
     cPhiEP = np.asarray(mesh_cells.cell_data[DATASTR1])
@@ -237,28 +263,13 @@ def loadLaplaceSolnBayer(fileName):
     cPhiRV = np.asarray(mesh_cells.cell_data[DATASTR3])
     cPhiAB = np.asarray(mesh_cells.cell_data[DATASTR4])
 
-    # Use pyvista's compute_derivative to get cell gradients
-    # compute_derivative will add arrays named '<DATA>_grad' to the cell_data
-    grad_mesh = mesh_cells.compute_derivative(scalars=DATASTR1, gradient=True, preference='cell')
-    cGPhiEP = np.asarray(grad_mesh.cell_data['gradient'])
+    # Gradient cell arrays (Ncells, 3)
+    cGPhiEP = np.asarray(mesh_cells.cell_data[DATASTR1 + "_grad"])
+    cGPhiLV = np.asarray(mesh_cells.cell_data[DATASTR2 + "_grad"])
+    cGPhiRV = np.asarray(mesh_cells.cell_data[DATASTR3 + "_grad"])
+    cGPhiAB = np.asarray(mesh_cells.cell_data[DATASTR4 + "_grad"])
 
-    grad_mesh = mesh_cells.compute_derivative(scalars=DATASTR2, gradient=True, preference='cell')
-    cGPhiLV = np.asarray(grad_mesh.cell_data['gradient'])
-
-    grad_mesh = mesh_cells.compute_derivative(scalars=DATASTR3, gradient=True, preference='cell')
-    cGPhiRV = np.asarray(grad_mesh.cell_data['gradient'])
-
-    grad_mesh = mesh_cells.compute_derivative(scalars=DATASTR4, gradient=True, preference='cell')
-    cGPhiAB = np.asarray(grad_mesh.cell_data['gradient'])
-
-    # Use the mesh with cell-data (but without the large scalar arrays) as result_mesh
-    mesh_cells.cell_data[DATASTR1 + '_grad'] = cGPhiEP
-    mesh_cells.cell_data[DATASTR2 + '_grad'] = cGPhiLV
-    mesh_cells.cell_data[DATASTR3 + '_grad'] = cGPhiRV
-    mesh_cells.cell_data[DATASTR4 + '_grad'] = cGPhiAB
-
-    return mesh_cells, cPhiEP, cPhiLV, cPhiRV, cPhiAB, \
-        cGPhiEP, cGPhiLV, cGPhiRV, cGPhiAB
+    return mesh_cells, cPhiEP, cPhiLV, cPhiRV, cPhiAB, cGPhiEP, cGPhiLV, cGPhiRV, cGPhiAB
 
 
 def bislerp(Q1, Q2, interp_func):
@@ -279,6 +290,7 @@ def bislerp(Q1, Q2, interp_func):
         mask_t = t > 0.0
         if np.any(mask_t):
             S = np.sqrt(t[mask_t] + 1.0) * 2.0
+    
             q[mask_t, 0] = 0.25 * S
             q[mask_t, 1] = (R[mask_t, 2, 1] - R[mask_t, 1, 2]) / S
             q[mask_t, 2] = (R[mask_t, 0, 2] - R[mask_t, 2, 0]) / S
@@ -676,10 +688,7 @@ def loadLaplaceSolnDoste(fileName):
     # Read mesh with pyvista
     result_mesh = pv.read(fileName)
 
-    # Convert point-data to cell-data (keep point data passed to cells)
-    mesh_cells = result_mesh.point_data_to_cell_data()
-
-    print("   Extracting solution and estimating gradients at cells")
+    print("   Extracting solution and estimating gradients at points (then averaging to cells)")
 
     # Map VTU array names to internal keys expected by downstream code
     name_map = {
@@ -699,20 +708,41 @@ def loadLaplaceSolnDoste(fileName):
     lap = {}
     grad = {}
 
+    # Helper: min-max scale array to [0,1]; if flat, return 0.5
+    def _minmax01(arr):
+        arr = np.asarray(arr, dtype=float)
+        amin = np.min(arr)
+        amax = np.max(arr)
+        if amax > amin:
+            return (arr - amin) / (amax - amin)
+        else:
+            return np.ones_like(arr) * 0.5
+
+    # Compute gradients at points (smoother than cell-averaged gradients)
     for vname in varnames:
-        if vname not in mesh_cells.cell_data:
-            print(f"   Warning: '{vname}' not found in cell_data; skipping")
-            continue
+        if vname not in result_mesh.point_data:
+            raise KeyError(
+                f"Expected point_data array '{vname}' not found in {fileName}. "
+                f"Available point_data: {list(result_mesh.point_data.keys())}"
+            )
+
+        # Scale to [0,1] before gradient computation
+        result_mesh.point_data[vname] = _minmax01(result_mesh.point_data[vname])
+
+        gmesh = result_mesh.compute_derivative(scalars=vname, gradient=True, preference='point')
+        # PyVista stores the gradient vector in an array named 'gradient'
+        result_mesh.point_data[vname + "_grad"] = np.asarray(gmesh.point_data["gradient"])
+
+    # Convert point-data to cell-data (includes the newly computed *_grad arrays)
+    mesh_cells = result_mesh.point_data_to_cell_data()
+
+    # Extract cell-centered Laplace values and gradients with expected key names
+    for vname in varnames:
         key = name_map[vname]
-
-        # Cell-centered Laplace values
         lap[key] = np.asarray(mesh_cells.cell_data[vname])
+        grad[key] = np.asarray(mesh_cells.cell_data[vname + "_grad"])
 
-        # Cell-centered gradients via PyVista
-        gmesh = mesh_cells.compute_derivative(scalars=vname, gradient=True, preference='cell')
-        grad[key] = np.asarray(gmesh.cell_data['gradient'])
-
-    return result_mesh, lap, grad
+    return mesh_cells, lap, grad
 
 
 def compute_basis_vectors(lap, grad):

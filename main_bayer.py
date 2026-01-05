@@ -7,6 +7,7 @@ Created on 2025/11/21 20:38:14
 '''
 
 import os
+import argparse
 import src.FibGen as fg
 from time import time
 
@@ -18,7 +19,7 @@ run_flag = True
 svfsi_exec = "svmultiphysics "
 
 mesh_path = "example/truncated/VOLUME.vtu"
-surfaces_dir = f"example/truncated/mesh-surfaces"
+surfaces_dir = None  # default computed relative to mesh_path below
 outdir = "example/truncated/output_b"
 
 surface_names = {'epi': 'EPI.vtp',
@@ -40,10 +41,33 @@ params = {
 ############  FIBER GENERATION  ###########################
 ###########################################################
 
+# Optional CLI overrides
+parser = argparse.ArgumentParser(description="Generate fibers using the Bayer method.")
+parser.add_argument("--svfsi-exec", default=svfsi_exec, help="svMultiPhysics executable/command (default: %(default)s)")
+parser.add_argument("--mesh-path", default=mesh_path, help="Path to the volumetric mesh .vtu (default: %(default)s)")
+parser.add_argument(
+    "--surfaces-dir",
+    default=surfaces_dir,
+    help="Directory containing mesh surfaces; default: <parent of mesh_path>/mesh-surfaces",
+)
+parser.add_argument("--outdir", default=outdir, help="Output directory (default: %(default)s)")
+args = parser.parse_args()
+
+svfsi_exec = args.svfsi_exec
+if not svfsi_exec.endswith(" "):
+    svfsi_exec = svfsi_exec + " "
+
+mesh_path = args.mesh_path
+outdir = args.outdir
+
 # Make sure the paths are full paths
 mesh_path = os.path.abspath(mesh_path)
-surfaces_dir = os.path.abspath(surfaces_dir)
 outdir = os.path.abspath(outdir)
+
+if args.surfaces_dir is None:
+    surfaces_dir = os.path.join(os.path.dirname(mesh_path), "mesh-surfaces")
+else:
+    surfaces_dir = os.path.abspath(args.surfaces_dir)
 
 start = time()
 fg.generate_epi_apex(mesh_path, surfaces_dir, surface_names)
