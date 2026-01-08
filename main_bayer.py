@@ -76,12 +76,12 @@ else:
     surfaces_dir = os.path.abspath(args.surfaces_dir)
 
 start = time()
-fg.generate_epi_apex(mesh_path, surfaces_dir, surface_names)
+fg.generate_epi_apex(surfaces_dir, surface_names)
 
 # Run the Laplace solver
 if run_flag:
     template_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "templates", "solver_bayer.xml")
-    laplace_results_file = fg.runLaplaceSolver(mesh_path, surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
+    laplace_results_file = fg.runLaplaceSolver(surfaces_dir, mesh_path, svfsi_exec, template_file, outdir, surface_names)
 laplace_results_file = outdir + '/result_001.vtu'
 
 # Generate the fiber directions
