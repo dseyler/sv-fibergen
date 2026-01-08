@@ -1,10 +1,16 @@
 #!/usr/bin/env python
 # -*-coding:utf-8 -*-
-'''
-Created on 2025/11/21 20:38:14
+"""Main script for generating biventricular fibers using the Bayer method.
 
-@author: Javiera Jilberto Vallejos 
-'''
+This module implements fiber generation for biventricular heart models using
+the Laplace-Dirichlet rule-based method described in:
+Bayer et al. 2012, "A Novel Rule-Based Algorithm for Assigning Myocardial 
+Fiber Orientation to Computational Heart Models"
+https://doi.org/10.1007/s10439-012-0593-5
+
+The script supports command-line arguments for customization of mesh paths,
+output directories, and solver executables.
+"""
 
 import os
 import argparse

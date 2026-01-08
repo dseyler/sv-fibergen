@@ -1,10 +1,21 @@
 #!/usr/bin/env python
 # -*-coding:utf-8 -*-
-'''
-Created on 2025/11/21 20:43:23
+"""Fiber generation module for biventricular heart models.
 
-@author: Javiera Jilberto Vallejos 
-'''
+This module provides functions to generate myocardial fiber orientations for
+biventricular heart models using Laplace-Dirichlet rule-based methods. It supports
+both the Bayer et al. (2012) and Doste et al. (2019) fiber generation algorithms.
+
+The module includes utilities for:
+- Generating epicardial apex surfaces
+- Running Laplace-Dirichlet solvers
+- Computing fiber directions based on Laplace field gradients
+- Handling coordinate transformations and rotations
+
+References:
+    Bayer et al. 2012: https://doi.org/10.1007/s10439-012-0593-5
+    Doste et al. 2019: https://doi.org/10.1002/cnm.3185
+"""
 
 import os
 import re
@@ -15,11 +26,13 @@ import copy
 
 
 def normalize(x):
-    """
-    Normalize each row of an (N, 3) array. Zero rows remain zero.
+    """Normalize each row of an (N, 3) array.
+    
+    Zero-length rows remain zero after normalization.
     
     Args:
-        x: array-like of shape (N, 3)
+        x: Array-like of shape (N, 3).
+    
     Returns:
         np.ndarray of shape (N, 3) with row-wise normalized vectors.
     """
@@ -36,7 +49,17 @@ def normalize(x):
 
 
 
-def get_normal_plane_svd(points):   # Find the plane that minimizes the distance given N points
+def get_normal_plane_svd(points):
+    """Find the plane that best fits a set of points using SVD.
+    
+    Args:
+        points: Array of shape (N, 3) representing 3D points.
+    
+    Returns:
+        tuple: A tuple containing:
+            - normal (np.ndarray): Unit normal vector to the fitted plane.
+            - centroid (np.ndarray): Centroid of the input points.
+    """
     centroid = np.mean(points, axis=0)
     svd = np.linalg.svd(points - centroid)
     normal = svd[2][-1]
@@ -44,17 +67,18 @@ def get_normal_plane_svd(points):   # Find the plane that minimizes the distance
     return normal, centroid
 
 
-def generate_epi_apex(mesh_path, surfaces_dir, surface_names):
-    '''
-    Generate the epi apex and epi mid surfaces from the epi surface of the BiV.
+def generate_epi_apex(surfaces_dir, surface_names):
+    """Generate the epicardial apex surface from the epicardial surface of the BiV.
     
-    Parameters:
-    -----------
-    surfaces_dir : str
-        Directory containing surface meshes
-    surface_names : list of str
-        List of surface mesh filenames
-    '''
+    This function identifies the apex point of the epicardium and creates a surface
+    mesh containing elements that include the apex point. The surface is saved with
+    global node and element IDs.
+    
+    Args:
+        surfaces_dir: Directory containing surface mesh files.
+        surface_names: Dictionary mapping surface types to filenames.
+            Expected keys: 'epi', 'epi_apex', 'base'.
+    """
     
     # Load the epi surface
     epi_name = os.path.join(surfaces_dir, surface_names['epi'])
@@ -123,7 +147,24 @@ def generate_epi_apex(mesh_path, surfaces_dir, surface_names):
 
 
 
-def runLaplaceSolver(mesh_dir, surfaces_dir, mesh_file, exec_svmultiphysics, template_file, outdir, surface_names):
+def runLaplaceSolver(surfaces_dir, mesh_file, exec_svmultiphysics, template_file, outdir, surface_names):
+    """Run the svMultiPhysics Laplace solver for fiber generation.
+    
+    This function creates an XML configuration file from a template, updates paths,
+    and executes the Laplace-Dirichlet solver to compute the Laplace fields needed
+    for fiber direction generation.
+    
+    Args:
+        surfaces_dir: Directory containing surface mesh files.
+        mesh_file: Path to the volumetric mesh file.
+        exec_svmultiphysics: Command to execute svMultiPhysics (e.g., "svmultiphysics ").
+        template_file: Path to the XML template file for the solver.
+        outdir: Output directory for solver results.
+        surface_names: Dictionary mapping surface types to filenames.
+    
+    Returns:
+        str: Path to the result file containing Laplace solutions.
+    """
     xml_template_path = template_file
     out_name = os.path.join(surfaces_dir, "../svFibers_BiV.xml")
     
@@ -202,19 +243,31 @@ def runLaplaceSolver(mesh_dir, surfaces_dir, mesh_file, exec_svmultiphysics, tem
 
 
 def loadLaplaceSolnBayer(fileName):
-    '''
-    Load a solution to a Laplace-Dirichlet problem from a .vtu file and extract
-    the solution and its gradients at the cells.
-
-    ARGS:
-    fileName : str
-        Path to the .vtu file with the Laplace solution. The solution should be
-        defined at the nodes. The Laplace fields should be named as follows:
-        - Phi_BiV_EPI: Laplace field for the endocardium
-        - Phi_BiV_LV: Laplace field for the left ventricle
-        - Phi_BiV_RV: Laplace field for the right ventricle
-        - Phi_BiV_AB: Laplace field for the apex to base direction
-    '''
+    """Load Laplace-Dirichlet solution for Bayer method from a VTU file.
+    
+    Extracts the Laplace solution and gradients at cell centers. The solution
+    is normalized to [0, 1] range before gradient computation.
+    
+    Args:
+        fileName: Path to the .vtu file with the Laplace solution. The solution
+            should be defined at the nodes. Expected field names:
+            - Phi_BiV_EPI: Endocardial-epicardial transmural field
+            - Phi_BiV_LV: Left ventricle field
+            - Phi_BiV_RV: Right ventricle field
+            - Phi_BiV_AB: Apex-to-base field
+    
+    Returns:
+        tuple: A tuple containing:
+            - mesh_cells: PyVista mesh with cell-centered data
+            - cPhiEP: Transmural field at cells (N,)
+            - cPhiLV: LV field at cells (N,)
+            - cPhiRV: RV field at cells (N,)
+            - cPhiAB: Apex-base field at cells (N,)
+            - cGPhiEP: Gradient of transmural field (N, 3)
+            - cGPhiLV: Gradient of LV field (N, 3)
+            - cGPhiRV: Gradient of RV field (N, 3)
+            - cGPhiAB: Gradient of apex-base field (N, 3)
+    """
 
     DATASTR1 = 'Phi_BiV_EPI'
     DATASTR2 = 'Phi_BiV_LV'
@@ -273,14 +326,21 @@ def loadLaplaceSolnBayer(fileName):
 
 
 def bislerp(Q1, Q2, interp_func):
-    """
-    Vectorized spherical interpolation between batches of rotation matrices.
-    Q1, Q2: (N, 3, 3)
-    interp_func: (N,) values in [0,1]
-    Returns Q: (N, 3, 3)
-    Notes:
-      - Uses wxyz quaternion convention internally, matching quat2rot below.
-      - Avoids per-element Python/Scipy objects for performance.
+    """Vectorized spherical linear interpolation between batches of rotation matrices.
+    
+    Performs SLERP on rotation matrices represented as quaternions internally.
+    Uses wxyz quaternion convention to match quat2rot.
+    
+    Args:
+        Q1: Array of shape (N, 3, 3) containing starting rotation matrices.
+        Q2: Array of shape (N, 3, 3) containing ending rotation matrices.
+        interp_func: Array of shape (N,) with interpolation values in [0, 1].
+    
+    Returns:
+        np.ndarray: Array of shape (N, 3, 3) containing interpolated rotation matrices.
+    
+    Note:
+        Avoids per-element Python/Scipy objects for performance.
     """
     def rotm_to_quat_batch(R):
         # R: (N,3,3) -> q: (N,4) [w,x,y,z]
@@ -290,7 +350,6 @@ def bislerp(Q1, Q2, interp_func):
         mask_t = t > 0.0
         if np.any(mask_t):
             S = np.sqrt(t[mask_t] + 1.0) * 2.0
-    
             q[mask_t, 0] = 0.25 * S
             q[mask_t, 1] = (R[mask_t, 2, 1] - R[mask_t, 1, 2]) / S
             q[mask_t, 2] = (R[mask_t, 0, 2] - R[mask_t, 2, 0]) / S
@@ -400,9 +459,20 @@ def bislerp(Q1, Q2, interp_func):
     return quat_to_rotm_batch(q)
 
 def axis(u, v):
-    """
-    u, v: (nelems, 3)
-    return Q: (nelems, 3, 3) where columns are [e0 (circ), e1 (long), e2 (trans)] per element
+    """Construct orthogonal coordinate systems from two vector fields.
+    
+    Creates an orthonormal basis [e0, e1, e2] for each element where:
+    - e1 is aligned with u (normalized)
+    - e2 is orthogonal to e1 and in the plane of v
+    - e0 is the cross product of e1 and e2
+    
+    Args:
+        u: Array of shape (nelems, 3) representing the longitudinal direction.
+        v: Array of shape (nelems, 3) representing a secondary direction.
+    
+    Returns:
+        np.ndarray: Array of shape (nelems, 3, 3) where columns are
+            [e0 (circumferential), e1 (longitudinal), e2 (transmural)].
     """
     u = np.asarray(u, dtype=float)
     v = np.asarray(v, dtype=float)
@@ -428,10 +498,18 @@ def axis(u, v):
     return Q
 
 def orient(Q, alpha, beta):
-    """
-    Given an orthogonal matrix Q (ne,3,3), rotate each Q[i] by alpha[i] about
-    the z-axis and then by beta[i] about the x-axis. alpha and beta are arrays 
-    of length ne.
+    """Apply alpha and beta rotations to orthogonal matrices.
+    
+    For each element, rotates Q[i] by alpha[i] about the z-axis and then
+    by beta[i] about the y-axis (transmural direction).
+    
+    Args:
+        Q: Array of shape (ne, 3, 3) containing orthogonal matrices.
+        alpha: Array of shape (ne,) with rotation angles (radians) about z-axis.
+        beta: Array of shape (ne,) with rotation angles (radians) about y-axis.
+    
+    Returns:
+        np.ndarray: Array of shape (ne, 3, 3) containing rotated matrices.
     """
     Q = np.asarray(Q, dtype=float)
     ne = Q.shape[0]
@@ -479,9 +557,30 @@ def orient(Q, alpha, beta):
 def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
                                  params, intermediate=False):
-    '''
-    Compute the fiber directions at the center of each cell
-    '''
+    """Compute fiber directions using the Bayer et al. method.
+    
+    Implements the rule-based algorithm from Bayer et al. (2012) to compute
+    fiber, sheet, and normal directions from Laplace field gradients.
+    
+    Args:
+        Phi_EPI: Transmural field values at cells (N,).
+        Phi_LV: Left ventricle field values at cells (N,).
+        Phi_RV: Right ventricle field values at cells (N,).
+        gPhi_EPI: Gradient of transmural field (N, 3).
+        gPhi_LV: Gradient of LV field (N, 3).
+        gPhi_RV: Gradient of RV field (N, 3).
+        gPhi_AB: Gradient of apex-base field (N, 3).
+        params: Dictionary with keys 'ALFA_END', 'ALFA_EPI', 'BETA_END', 'BETA_EPI'
+            (all in degrees).
+        intermediate: If True, also return intermediate basis vectors.
+    
+    Returns:
+        tuple: If intermediate=False, returns (F, S, T) where:
+            - F: Fiber directions (N, 3)
+            - S: Sheet normal directions (N, 3)
+            - T: Sheet directions (N, 3)
+        If intermediate=True, also returns intermediate circumferential vectors.
+    """
 
     # Unpack parameters
     ALFA_END = np.deg2rad(params["ALFA_END"])
@@ -502,6 +601,7 @@ def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
     Q_RV0 = axis(gPhi_AB, gPhi_RV)  # Note that gPhi_RV points the other way
     Q_RV = orient(Q_RV0, alfaS, -betaS)  # Therefore, we need a minus in betaS
 
+    # Flipping vectors for consistent bislerp interpolation
     Q_END = bislerp(Q_LV, Q_RV, d)
     Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
     Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
@@ -524,11 +624,29 @@ def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
 def get_alpha_beta_angles_Bayer(F, Phi_EPI, Phi_LV, Phi_RV,
                                  gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB, 
                                  params):
-    '''
-    Sanity check routine
-    Compute alpha and beta angles at cells given fiber directions F and Laplace gradients
-
-    '''
+    """Compute alpha and beta angles from fiber directions (Bayer method).
+    
+    This is a sanity check routine that computes the helix and transverse angles
+    from given fiber directions and Laplace field gradients.
+    
+    Args:
+        F: Fiber directions at cells (N, 3).
+        Phi_EPI: Transmural field values at cells (N,).
+        Phi_LV: Left ventricle field values at cells (N,).
+        Phi_RV: Right ventricle field values at cells (N,).
+        gPhi_EPI: Gradient of transmural field (N, 3).
+        gPhi_LV: Gradient of LV field (N, 3).
+        gPhi_RV: Gradient of RV field (N, 3).
+        gPhi_AB: Gradient of apex-base field (N, 3).
+        params: Dictionary with keys 'ALFA_END', 'ALFA_EPI' (in degrees).
+    
+    Returns:
+        tuple: A tuple containing:
+            - alpha_angle: Helix angles in degrees (N,)
+            - beta_angle: Transverse angles in degrees (N,)
+            - C: Circumferential vectors before rotation (N, 3)
+            - Cr: Circumferential vectors after alpha rotation (N, 3)
+    """
 
     ALFA_END = np.deg2rad(params["ALFA_END"])
     ALFA_EPI = np.deg2rad(params["ALFA_EPI"])
@@ -580,16 +698,26 @@ def get_alpha_beta_angles_Bayer(F, Phi_EPI, Phi_LV, Phi_RV,
     return np.rad2deg(alpha_angle), np.rad2deg(beta_angle), C, Cr
 
 def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return_angles=False, return_intermediate=False):
-    '''
-    Generate fiber directions on a truncated BiV ventricular geometry using the
-    Laplace-Dirichlet rule-based method of Bayer et al. 2012
-
-    ARGS:
-    laplace_results_file : str
-        Path to the .vtu mesh with Laplace fields defined at nodes
-    params : dict
-        Dictionary of parameters for fiber generation
-    '''
+    """Generate fiber directions for BiV geometry using the Bayer method.
+    
+    Implements the Laplace-Dirichlet rule-based method of Bayer et al. (2012)
+    to generate fiber directions on a truncated biventricular heart geometry.
+    
+    Args:
+        outdir: Output directory for fiber files.
+        laplace_results_file: Path to the .vtu mesh with Laplace fields defined at nodes.
+        params: Dictionary of parameters with keys:
+            - ALFA_END: Endocardial helix angle in degrees
+            - ALFA_EPI: Epicardial helix angle in degrees
+            - BETA_END: Endocardial transverse angle in degrees
+            - BETA_EPI: Epicardial transverse angle in degrees
+        return_angles: If True, compute and include alpha/beta angles in output.
+        return_intermediate: If True, include intermediate basis vectors in output.
+    
+    Returns:
+        pyvista.UnstructuredGrid: Mesh with computed fiber directions and optional
+            angle/intermediate data in cell_data.
+    """
     
     t1 = time.time()
     print("========================================================")
@@ -598,8 +726,7 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
     result_mesh, Phi_EPI, Phi_LV, Phi_RV, Phi_AB, \
     gPhi_EPI, gPhi_LV, gPhi_RV, gPhi_AB = loadLaplaceSolnBayer(laplace_results_file)
 
-
-    # Write the fiber directions to a vtu files
+    # Generating output mesh
     output_mesh = copy.deepcopy(result_mesh)
     # Ensure only FIB_DIR is present
     for k in list(output_mesh.cell_data.keys()):
@@ -627,9 +754,13 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
         result_mesh.cell_data['S'] = S
         result_mesh.cell_data['T'] = T
 
+    t2 = time.time()
+    print('\n   Total time: %.3fs' % (t2-t1))
+    print("========================================================")
+    
+    # Write the fiber directions to a vtu files
     print("   Writing domains and fibers to VTK data structure")
-
-
+    
     fname1 = os.path.join(outdir, "fibersLong.vtu")
     print("   Writing to vtu file   --->   %s" % (fname1))
     output_mesh.cell_data.set_array(F, 'FIB_DIR')
@@ -664,21 +795,24 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
 
 
 def loadLaplaceSolnDoste(fileName):
-    '''
-    Load a solution to a Laplace-Dirichlet problem from a .vtu file and extract
-    the solution and its gradients at the cells.
-
-    ARGS:
-    fileName : str
-        Path to the .vtu file with the Laplace solution. The solution should be
-        defined at the nodes. 
-
+    """Load Laplace-Dirichlet solution for Doste method from a VTU file.
+    
+    Extracts the Laplace solution and gradients at cell centers. The solution
+    is normalized to [0, 1] range before gradient computation.
+    
+    Args:
+        fileName: Path to the .vtu file with the Laplace solution. Expected fields:
+            - Trans_BiV: Ventricular transmural coordinate
+            - Long_AV, Long_MV, Long_PV, Long_TV: Longitudinal fields from valves
+            - Weight_LV, Weight_RV: Ventricle weight fields
+            - Trans_EPI, Trans_LV, Trans_RV: Transmural fields
+    
     Returns:
-    lap : dict
-        Dictionary of Laplace solution at cells
-    grad : dict
-        Dictionary of gradients at cells
-    '''
+        tuple: A tuple containing:
+            - mesh_cells: PyVista mesh with cell-centered data
+            - lap: Dictionary of Laplace solution values at cells
+            - grad: Dictionary of gradient arrays at cells (N, 3)
+    """
 
     varnames = ['Trans_BiV', 'Long_AV', 'Long_MV', 'Long_PV', 'Long_TV', 'Weight_LV', 
                 'Weight_RV', 'Trans_EPI', 'Trans_LV', 'Trans_RV']
@@ -746,6 +880,19 @@ def loadLaplaceSolnDoste(fileName):
 
 
 def compute_basis_vectors(lap, grad):
+    """Compute local orthogonal basis vectors for LV and RV.
+    
+    Constructs circumferential, longitudinal, and transmural directions for
+    both left and right ventricles from Laplace field gradients.
+    
+    Args:
+        lap: Dictionary of Laplace solution values at cells.
+        grad: Dictionary of gradient arrays at cells (N, 3).
+    
+    Returns:
+        dict: Dictionary with keys 'eC_lv', 'eT_lv', 'eL_lv', 'eC_rv', 'eT_rv',
+            'eL_rv', 'eC' containing basis vectors (N, 3).
+    """
     # LV
     # longitudinal
     lv_glong = grad['lv_mv_long']*lap['lv_weight'][:,None] + grad['lv_av_long']*(1 - lap['lv_weight'][:,None])
@@ -796,6 +943,19 @@ def compute_basis_vectors(lap, grad):
 
 
 def redistribute_weight(weight, up, low, strategy='centre'):
+    """Redistribute weight values to center or flip their distribution.
+    
+    Args:
+        weight: Array of weight values to redistribute.
+        up: Upper quantile threshold (e.g., 0.7).
+        low: Lower quantile threshold (e.g., 0.01).
+        strategy: Redistribution strategy. Options:
+            - 'centre': Clip tails and renormalize to [0, 1]
+            - 'flip': Flip the distribution and handle tails
+    
+    Returns:
+        np.ndarray: Redistributed weight values normalized to [0, 1].
+    """
     new_weight = weight.copy()
 
     if strategy == 'flip':
@@ -843,6 +1003,24 @@ def redistribute_weight(weight, up, low, strategy='centre'):
 
 
 def compute_alpha_beta_angles(lap, params):
+    """Compute spatially-varying alpha and beta angles for Doste method.
+    
+    Calculates helix and transverse angles for LV, RV, and septum regions
+    based on transmural position and valve weights.
+    
+    Args:
+        lap: Dictionary of Laplace solution values at cells.
+        params: Dictionary with angle parameters (in degrees):
+            - AENDOLV, AEPILV: LV endo/epi helix angles
+            - AENDORV, AEPIRV: RV endo/epi helix angles
+            - AOTENDOLV, AOTEPILV: LV outflow tract endo/epi helix angles
+            - AOTENDORV, AOTEPIRV: RV outflow tract endo/epi helix angles
+            - BENDOLV, BEPILV: LV endo/epi transverse angles
+            - BENDORV, BEPIRV: RV endo/epi transverse angles
+    
+    Returns:
+        dict: Dictionary containing computed angle arrays for each region.
+    """
     # Modify weights so the effect of outflow tracts is localized
     lv_weight = redistribute_weight(lap['lv_weight'], 0.7, 0.01)
     rv_weight = redistribute_weight(lap['rv_weight'], 0.1, 0.001)
@@ -883,6 +1061,21 @@ def compute_alpha_beta_angles(lap, params):
 
 
 def rotate_basis(eC, eL, eT, alpha, beta):
+    """Rotate local basis vectors by alpha and beta angles.
+    
+    Applies two successive rotations: first by alpha about the transmural axis,
+    then by beta about the rotated longitudinal axis.
+    
+    Args:
+        eC: Circumferential vectors (N, 3).
+        eL: Longitudinal vectors (N, 3).
+        eT: Transmural vectors (N, 3).
+        alpha: Helix rotation angles in radians (N,).
+        beta: Transverse rotation angles in radians (N,).
+    
+    Returns:
+        np.ndarray: Rotated basis matrices of shape (N, 3, 3).
+    """
     eC = normalize(eC)
     eT = normalize(eT)
     eL = normalize(eL)
@@ -918,6 +1111,16 @@ def rotate_basis(eC, eL, eT, alpha, beta):
 
 
 def compute_local_basis(basis, angles):
+    """Compute rotated local basis for septum and free wall regions.
+    
+    Args:
+        basis: Dictionary of basis vectors for LV and RV.
+        angles: Dictionary of angle arrays for each region.
+    
+    Returns:
+        dict: Dictionary with keys 'Qlv_septum', 'Qrv_septum', 'Qlv_epi', 'Qrv_epi'
+            containing rotated basis matrices (N, 3, 3).
+    """
     Qlv_septum = rotate_basis(basis['eC_lv'], basis['eL_lv'], basis['eT_lv'], angles['alpha_septum'], angles['beta_septum'])
     Qrv_septum = rotate_basis(basis['eC_rv'], basis['eL_rv'], basis['eT_rv'], angles['alpha_septum'], angles['beta_septum'])
     Qlv_epi = rotate_basis(basis['eC_lv'], basis['eL_lv'], basis['eT_lv'], angles['alpha_wall_lv'], angles['beta_wall_lv'])
@@ -933,6 +1136,20 @@ def compute_local_basis(basis, angles):
 
 
 def interpolate_local_basis(lap, local_basis):
+    """Interpolate local basis across septum and transmural direction.
+    
+    Uses spherical linear interpolation (SLERP) to smoothly blend basis vectors
+    between LV and RV, and between endocardium and epicardium.
+    
+    Args:
+        lap: Dictionary of Laplace solution values at cells.
+        local_basis: Dictionary of rotated basis matrices.
+    
+    Returns:
+        tuple: A tuple containing:
+            - Q: Interpolated basis matrices (N, 3, 3)
+            - Qepi: Epicardial basis matrices (N, 3, 3)
+    """
 
     epi_trans = lap['epi_trans']
 
@@ -949,6 +1166,24 @@ def interpolate_local_basis(lap, local_basis):
 
 
 def getFiberDirectionsDoste(lap, grad, params, intermediate=False):
+    """Compute fiber directions using the Doste et al. method.
+    
+    Implements the rule-based algorithm from Doste et al. (2019) to compute
+    fiber, sheet, and normal directions from Laplace field gradients.
+    
+    Args:
+        lap: Dictionary of Laplace solution values at cells.
+        grad: Dictionary of gradient arrays at cells (N, 3).
+        params: Dictionary of angle parameters (in degrees).
+        intermediate: If True, also return intermediate basis vectors and angles.
+    
+    Returns:
+        tuple: If intermediate=False, returns (f, s, n) where:
+            - f: Fiber directions (N, 3)
+            - s: Sheet normal directions (N, 3)
+            - n: Sheet directions (N, 3)
+        If intermediate=True, also returns basis, angles, local_basis, and Qepi.
+    """
     # Convert parameters from degrees to radians
     for key in params:
         params[key] = np.deg2rad(params[key])
@@ -977,24 +1212,31 @@ def getFiberDirectionsDoste(lap, grad, params, intermediate=False):
 
 
 def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return_angles=False, return_intermediate=False):
-    '''
-    Generate fiber directions on a truncated BiV ventricular geometry using the
-    Laplace-Dirichlet rule-based method of Bayer et al. 2012
-
-    ARGS:
-    laplace_results_file : str
-        Path to the .vtu mesh with Laplace fields defined at nodes
-    params : dict
-        Dictionary of parameters for fiber generation
-    '''
+    """Generate fiber directions for BiV geometry using the Doste method.
+    
+    Implements the Laplace-Dirichlet rule-based method of Doste et al. (2019)
+    to generate fiber directions on a biventricular heart geometry with outflow tracts.
+    
+    Args:
+        outdir: Output directory for fiber files.
+        laplace_results_file: Path to the .vtu mesh with Laplace fields defined at nodes.
+        params: Dictionary of angle parameters (in degrees). See compute_alpha_beta_angles
+            for required keys.
+        return_angles: If True, compute and include alpha/beta angles in output.
+        return_intermediate: If True, include intermediate basis vectors and angles in output.
+    
+    Returns:
+        pyvista.UnstructuredGrid: Mesh with computed fiber directions and optional
+            angle/intermediate data in cell_data.
+    """
     
     t1 = time.time()
     print("========================================================")
 
     # Load Laplace solution    
     result_mesh,lap, grad = loadLaplaceSolnDoste(laplace_results_file)
-
-    # Write the fiber directions to a vtu files
+    
+    # Generating output mesh
     output_mesh = copy.deepcopy(result_mesh)
     # Ensure only FIB_DIR is present
     for k in list(output_mesh.cell_data.keys()):
@@ -1025,8 +1267,12 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
         result_mesh.cell_data['S'] = S
         result_mesh.cell_data['T'] = T
 
+    t2 = time.time()
+    print('\n   Total time: %.3fs' % (t2-t1))
+    print("========================================================")
+    
+    # Write the fiber directions to a vtu files
     print("   Writing domains and fibers to VTK data structure")
-
 
     fname1 = os.path.join(outdir, "fibersLong.vtu")
     print("   Writing to vtu file   --->   %s" % (fname1))
@@ -1043,10 +1289,6 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
     output_mesh.cell_data.set_array(S, 'FIB_DIR')
     output_mesh.save(fname1)
 
-    t2 = time.time()
-    print('\n   Total time: %.3fs' % (t2-t1))
-    print("========================================================")
-
     if return_angles:
         alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles_Doste(F, lap, grad, params)
         result_mesh.cell_data['Alpha_Angle'] = alpha_angle
@@ -1060,17 +1302,24 @@ def generate_fibers_BiV_Doste_cells(outdir, laplace_results_file, params, return
 
 
 def get_alpha_beta_angles_Doste(F, lap, grad, params):
-    '''
-    Sanity check routine for Doste-based fibers.
-    Compute alpha and beta angles at cells given fiber directions F and the
-    Laplace/basis fields used by the Doste method.
-
+    """Compute alpha and beta angles from fiber directions (Doste method).
+    
+    This is a sanity check routine that computes the helix and transverse angles
+    from given fiber directions using the Doste method's Laplace fields and basis.
+    
+    Args:
+        F: Fiber directions at cells (N, 3).
+        lap: Dictionary of Laplace solution values at cells.
+        grad: Dictionary of gradient arrays at cells (N, 3).
+        params: Dictionary of angle parameters (in degrees).
+    
     Returns:
-      alpha_angle_deg, beta_angle_deg, eC_ref, Cr_ref
-        - alpha, beta in degrees
-        - eC_ref: reference circumferential vector (before rotations)
-        - Cr_ref: circumferential vector after applying only alpha rotation
-    '''
+        tuple: A tuple containing:
+            - alpha_angle_deg: Helix angles in degrees (N,)
+            - beta_angle_deg: Transverse angles in degrees (N,)
+            - eC_ref: Reference circumferential vector before rotations (N, 3)
+            - Cr_ref: Circumferential vector after alpha rotation only (N, 3)
+    """
 
     # Reconstruct base vectors used by Doste
     basis = compute_basis_vectors(lap, grad)

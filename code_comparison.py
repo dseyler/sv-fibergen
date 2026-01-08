@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 # -*-coding:utf-8 -*-
-'''
+"""Comparison script for fiber generation methods.
+
+This module compares the old and new implementations of the fiber generation
+algorithms for biventricular heart models. It runs both implementations and
+compares the resulting fiber directions.
+
 Created on 2025/11/21 20:38:14
 
 @author: Javiera Jilberto Vallejos 
-'''
+"""
 
 import os
 import src.FibGen as fg
