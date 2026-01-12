@@ -21,7 +21,7 @@ from time import time
 ############  USER INPUTS  ################################
 ###########################################################
 
-run_flag = True
+run_flag = False
 svfsi_exec = "svmultiphysics "
 
 mesh_path = "example/truncated/VOLUME.vtu"
@@ -38,8 +38,8 @@ surface_names = {'epi': 'EPI.vtp',
 params = {
     "ALFA_END": 60.0,
     "ALFA_EPI": -60.0,
-    "BETA_END": 20.0,
-    "BETA_EPI": -20.0,
+    "BETA_END": 0.0,
+    "BETA_EPI": -0.0,
 }
 
 

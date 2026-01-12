@@ -342,6 +342,7 @@ def bislerp(Q1, Q2, interp_func):
     Note:
         Avoids per-element Python/Scipy objects for performance.
     """
+    print(Q1[514711,0], Q2[514711,0], interp_func[514711])
     def rotm_to_quat_batch(R):
         # R: (N,3,3) -> q: (N,4) [w,x,y,z]
         t = np.einsum('nii->n', R)  # trace
@@ -428,10 +429,15 @@ def bislerp(Q1, Q2, interp_func):
     q2 = rotm_to_quat_batch(np.asarray(Q2, dtype=float))
 
     # Ensure shortest path on the unit 4-sphere
+    print(Q1[514711,0], Q2[514711,0], interp_func[514711])
+    print(q1[514711], q2[514711])
     dot = np.sum(q1 * q2, axis=1)
     neg_mask = dot < 0.0
     if np.any(neg_mask):
-        q2[neg_mask] = -q2[neg_mask]
+        rot1_mask = neg_mask * (t > 0.5)
+        rot2_mask = neg_mask * (t <= 0.5)
+        q1[rot1_mask] = -q1[rot1_mask]
+        q2[rot2_mask] = -q2[rot2_mask]
         dot[neg_mask] = -dot[neg_mask]
 
     # SLERP weights
@@ -456,6 +462,8 @@ def bislerp(Q1, Q2, interp_func):
 
     # Normalize and convert back to rotation matrices
     q /= np.linalg.norm(q, axis=1, keepdims=True)
+    print(q1[514711], q2[514711], q[514711])
+    print(quat_to_rotm_batch(q)[514711,0])
     return quat_to_rotm_batch(q)
 
 def axis(u, v):
@@ -601,14 +609,16 @@ def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
     Q_RV0 = axis(gPhi_AB, gPhi_RV)  # Note that gPhi_RV points the other way
     Q_RV = orient(Q_RV0, alfaS, -betaS)  # Therefore, we need a minus in betaS
 
-    # Flipping vectors for consistent bislerp interpolation
+    # # Flipping vectors for consistent bislerp interpolation
     Q_END = bislerp(Q_LV, Q_RV, d)
-    Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
-    Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
+    # Q_END[d > 0.5,:,0] = -Q_END[d > 0.5,:,0]
+    # Q_END[d > 0.5,:,2] = -Q_END[d > 0.5,:,2]
 
     Q_EPI0 = axis(gPhi_AB, gPhi_EPI)
     Q_EPI = orient(Q_EPI0, alfaW, betaW)
 
+    print("last bislerp")
+    print(Q_END[514711,0], Q_EPI[514711,0], Phi_EPI[514711])
     FST = bislerp(Q_END, Q_EPI, Phi_EPI)
 
     F = FST[:, :, 0]
@@ -616,7 +626,10 @@ def getFiberDirectionsBayer(Phi_EPI, Phi_LV, Phi_RV,
     T = FST[:, :, 2]
 
     if intermediate:
-        return F, S, T, Q_LV[:,:,0], Q_RV[:,:,0], Q_END[:,:,0], Q_EPI[:,:,0]
+        return F, S, T, Q_LV0[:,:,0], Q_LV[:,:,0], Q_RV0[:,:,0], Q_RV[:,:,0], \
+            Q_END[:,:,0], Q_EPI0[:,:,0], Q_EPI[:,:,0], \
+            d, alfaS, betaS, alfaW, betaW
+        
 
     return F, S, T
 
@@ -740,14 +753,23 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
                                  params, intermediate=return_intermediate)
     
     if return_intermediate:
-        F, S, T, eC_LV, eC_RV, eC_END, eC_EPI = out
+        F, S, T, eC_LV0, eC_LV, eC_RV0, eC_RV, eC_END, eC_EPI0, eC_EPI, d, alfaS, betaS, alfaW, betaW = out
+        print('o',eC_END[514711,0], eC_EPI[514711,0], d[514711])
         result_mesh.cell_data['F'] = F
         result_mesh.cell_data['S'] = S
         result_mesh.cell_data['T'] = T
+        result_mesh.cell_data['eC_LV_0'] = eC_LV0
         result_mesh.cell_data['eC_LV'] = eC_LV
+        result_mesh.cell_data['eC_RV_0'] = eC_RV0
         result_mesh.cell_data['eC_RV'] = eC_RV
         result_mesh.cell_data['eC_END'] = eC_END
+        result_mesh.cell_data['eC_EPI_0'] = eC_EPI0
         result_mesh.cell_data['eC_EPI'] = eC_EPI
+        result_mesh.cell_data['d'] = d
+        result_mesh.cell_data['alfaS'] = alfaS
+        result_mesh.cell_data['betaS'] = betaS
+        result_mesh.cell_data['alfaW'] = alfaW
+        result_mesh.cell_data['betaW'] = betaW
     else:
         F, S, T = out
         result_mesh.cell_data['F'] = F
@@ -755,30 +777,30 @@ def generate_fibers_BiV_Bayer_cells(outdir, laplace_results_file, params, return
         result_mesh.cell_data['T'] = T
 
     t2 = time.time()
-    print('\n   Total time: %.3fs' % (t2-t1))
-    print("========================================================")
+    # print('\n   Total time: %.3fs' % (t2-t1))
+    # print("========================================================")
     
     # Write the fiber directions to a vtu files
-    print("   Writing domains and fibers to VTK data structure")
+    # print("   Writing domains and fibers to VTK data structure")
     
     fname1 = os.path.join(outdir, "fibersLong.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
+    # print("   Writing to vtu file   --->   %s" % (fname1))
     output_mesh.cell_data.set_array(F, 'FIB_DIR')
     output_mesh.save(fname1)
 
     fname1 = os.path.join(outdir, "fibersSheet.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
+    # print("   Writing to vtu file   --->   %s" % (fname1))
     output_mesh.cell_data.set_array(T, 'FIB_DIR')
     output_mesh.save(fname1)
 
     fname1 = os.path.join(outdir, "fibersNormal.vtu")
-    print("   Writing to vtu file   --->   %s" % (fname1))
+    # print("   Writing to vtu file   --->   %s" % (fname1))
     output_mesh.cell_data.set_array(S, 'FIB_DIR')
     output_mesh.save(fname1)
 
     t2 = time.time()
-    print('\n   Total time: %.3fs' % (t2-t1))
-    print("========================================================")
+    # print('\n   Total time: %.3fs' % (t2-t1))
+    # print("========================================================")
 
     if return_angles:
         alpha_angle, beta_angle, eC, eCr = get_alpha_beta_angles_Bayer(F, Phi_EPI, Phi_LV, Phi_RV,
